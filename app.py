@@ -978,20 +978,50 @@ def logout():
 def predict():
     try:
         data = request.get_json(force=True)
+
         if not data:
-            return jsonify({"error": "No JSON body"}), 400
+            return jsonify({"error": "No input data provided"}), 400
+
+        # Extract safely
+        lat = float(data.get('latitude', 0))
+        lon = float(data.get('longitude', 0))
+        sig = float(data.get('sig', 0))
+        depth = float(data.get('depth_km', 10))
+        nst = float(data.get('nst', 0))
+        dmin = float(data.get('dmin', 0))
+        rms = float(data.get('rms', 0))
+        gap = float(data.get('gap', 0))
+
+        # 🔒 Validation
+        if sig < 0:
+            return jsonify({"error": "Significance cannot be negative"}), 400
+
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            return jsonify({"error": "Invalid latitude/longitude"}), 400
+
         FEATURES = ['longitude','latitude','depth_km','sig','nst','dmin','rms','gap']
         mdl = get_model()
+
         if mdl is None:
-            mag = 2.5 + (abs(data.get('sig',100)) / 500) * 4
+            mag = 2.5 + (abs(sig) / 500) * 4
         else:
             feat_names = mdl.feature_names_in_ if hasattr(mdl,'feature_names_in_') else FEATURES
             row = [float(data.get(f,0)) for f in feat_names]
             mag = float(mdl.predict([row])[0])
-        mag = round(max(1.0, min(10.0, mag)), 4)
-        return jsonify({"predicted_magnitude": mag, **classify_magnitude(mag)})
+
+        # 🔒 Safe limits
+        mag = round(max(1.0, min(10.0, mag)), 2)
+
+        return jsonify({
+            "predicted_magnitude": mag,
+            **classify_magnitude(mag)
+        })
+
+    except ValueError:
+        return jsonify({"error": "Invalid numeric input"}), 400
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route('/health')
 def health():
